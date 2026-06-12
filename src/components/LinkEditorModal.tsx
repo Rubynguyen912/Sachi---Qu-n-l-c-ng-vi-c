@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DashboardLink } from '../types';
+import { DashboardLink, SachiSection } from '../types';
 import LucideIcon from './LucideIcon';
 
 interface LinkEditorModalProps {
@@ -7,6 +7,7 @@ interface LinkEditorModalProps {
   onClose: () => void;
   onSave: (link: DashboardLink) => void;
   linkToEdit: DashboardLink | null;
+  sections: SachiSection[];
 }
 
 const AVAILABLE_ICONS = [
@@ -16,15 +17,22 @@ const AVAILABLE_ICONS = [
   'FileText', 'Smartphone', 'HelpCircle'
 ];
 
-export default function LinkEditorModal({ isOpen, onClose, onSave, linkToEdit }: LinkEditorModalProps) {
+export default function LinkEditorModal({ isOpen, onClose, onSave, linkToEdit, sections }: LinkEditorModalProps) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
-  const [categoryTitle, setCategoryTitle] = useState('Báo cáo và kế hoạch');
+  const [categoryTitle, setCategoryTitle] = useState('');
   const [groupTitle, setGroupTitle] = useState('');
   const [subGroupTitle, setSubGroupTitle] = useState('');
   const [iconName, setIconName] = useState('FileSpreadsheet');
-  const [section, setSection] = useState<'reports_plans' | 'booking_tiktok' | 'training'>('reports_plans');
+  const [section, setSection] = useState('reports_plans');
+
+  useEffect(() => {
+    if (sections && sections.length > 0 && !categoryTitle) {
+      setCategoryTitle(sections[0].name);
+      setSection(sections[0].id);
+    }
+  }, [sections, isOpen]);
 
   useEffect(() => {
     if (linkToEdit) {
@@ -40,26 +48,26 @@ export default function LinkEditorModal({ isOpen, onClose, onSave, linkToEdit }:
       setTitle('');
       setUrl('');
       setDescription('');
-      setCategoryTitle('Báo cáo và kế hoạch');
+      if (sections && sections.length > 0) {
+        setCategoryTitle(sections[0].name);
+        setSection(sections[0].id);
+      } else {
+        setCategoryTitle('Báo cáo và kế hoạch');
+        setSection('reports_plans');
+      }
       setGroupTitle('');
       setSubGroupTitle('');
       setIconName('FileSpreadsheet');
-      setSection('reports_plans');
     }
-  }, [linkToEdit, isOpen]);
+  }, [linkToEdit, isOpen, sections]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const categoryMapping: Record<string, 'reports_plans' | 'booking_tiktok' | 'training'> = {
-      'Báo cáo và kế hoạch': 'reports_plans',
-      'Booking & TikTok': 'booking_tiktok',
-      'Đào tạo': 'training'
-    };
-
-    const targetSection = categoryMapping[categoryTitle] || 'reports_plans';
+    const foundSection = sections.find(s => s.name === categoryTitle);
+    const targetSection = foundSection ? foundSection.id : section;
 
     const updatedLink: DashboardLink = {
       id: linkToEdit ? linkToEdit.id : `custom-${Date.now()}`,
@@ -109,12 +117,19 @@ export default function LinkEditorModal({ isOpen, onClose, onSave, linkToEdit }:
             <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Mục lớn đại diện *</label>
             <select
               value={categoryTitle}
-              onChange={(e) => setCategoryTitle(e.target.value)}
+              onChange={(e) => {
+                const selTitle = e.target.value;
+                setCategoryTitle(selTitle);
+                const found = sections.find(s => s.name === selTitle);
+                if (found) {
+                  setSection(found.id);
+                }
+              }}
               className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-sky-200 focus:border-sky-400 transition-all text-slate-700"
             >
-              <option value="Báo cáo và kế hoạch">Báo cáo và kế hoạch (Reports & Plans)</option>
-              <option value="Booking & TikTok">Booking & TikTok (KOC & Channels)</option>
-              <option value="Đào tạo">Đào tạo (Guideline & Resources)</option>
+              {sections.map(sec => (
+                <option key={sec.id} value={sec.name}>{sec.name} (Mục {sec.title})</option>
+              ))}
             </select>
           </div>
 

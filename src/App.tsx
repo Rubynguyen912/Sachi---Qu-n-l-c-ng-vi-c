@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DashboardLink, SectionId } from './types';
+import { DashboardLink, SectionId, SachiSection, SachiMinorSection } from './types';
 import { DEFAULT_SACHI_LINKS } from './data';
 import LucideIcon from './components/LucideIcon';
 import QuickNotes from './components/QuickNotes';
 import LinkEditorModal from './components/LinkEditorModal';
+import SectionEditorModal from './components/SectionEditorModal';
+import QuickEditModal from './components/QuickEditModal';
+import LoginScreen from './components/LoginScreen';
 
 // Professional SVG representation of Sachi Logo "Chăm sóc bé yêu" matching the provided image
 function SachiLogo({ className = "h-14" }: { className?: string }) {
@@ -74,7 +77,52 @@ function SachiLogo({ className = "h-14" }: { className?: string }) {
   );
 }
 
+const DEFAULT_SECTIONS: SachiSection[] = [
+  {
+    id: 'reports_plans',
+    title: '1',
+    name: 'Báo cáo và kế hoạch',
+    description: 'Bảng tổng hợp báo cáo Digital định kỳ, kế hoạch phân phối nội dung & vận động nhóm chỉ tiêu Marketing hàng tuần',
+    badge: 'Sachi S_Team',
+  },
+  {
+    id: 'booking_tiktok',
+    title: '2',
+    name: 'Booking & TikTok',
+    description: 'Theo dõi tiến độ booking các đối tác Agency (We Win, Onetone, Lê Gia...) và kịch bản/kênh TikTok inhouse Sachi',
+    badge: 'KOC & TikTok',
+  },
+  {
+    id: 'training',
+    title: '3',
+    name: 'Đào tạo',
+    description: 'Các tài nguyên đào tạo, cẩm nang Brand Guideline, nguyên liệu hình ảnh, video raw trong drive phục vụ thương bá Sachi',
+    badge: 'Kế Thừa',
+  }
+];
+
+const DEFAULT_MINOR_SECTIONS: SachiMinorSection[] = [
+  { id: 'Booking KOC', title: '1' },
+  { id: 'Inhouse TikTok', title: '2' },
+];
+
 export default function App() {
+  // Authentication State
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('sachi_logged_in') === 'true';
+  });
+  const [currentUser, setCurrentUser] = useState<string>(() => {
+    return localStorage.getItem('sachi_current_user') || '';
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem('sachi_logged_in');
+    localStorage.removeItem('sachi_current_user');
+    setIsLoggedIn(false);
+    setCurrentUser('');
+    setIsMobileMenuOpen(false);
+  };
+
   // Application Data & State
   const [links, setLinks] = useState<DashboardLink[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -82,6 +130,16 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'attached' | 'updating'>('all');
   
+  // Dynamic categories/sections configuration state
+  const [sections, setSections] = useState<SachiSection[]>([]);
+  const [minorSections, setMinorSections] = useState<SachiMinorSection[]>([]);
+  const [isSectionEditorOpen, setIsSectionEditorOpen] = useState(false);
+
+  // Quick Edit Modal States
+  const [editingSection, setEditingSection] = useState<SachiSection | null>(null);
+  const [editingMinorSection, setEditingMinorSection] = useState<SachiMinorSection | null>(null);
+  const [isQuickEditOpen, setIsQuickEditOpen] = useState(false);
+
   // Collapsed states for main groups/accordions of cards
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({
     'Báo cáo và kế hoạch': false,
@@ -105,6 +163,32 @@ export default function App() {
 
   // Load initial settings
   useEffect(() => {
+    // Load sections
+    const savedSections = localStorage.getItem('sachi_sections');
+    if (savedSections) {
+      try {
+        setSections(JSON.parse(savedSections));
+      } catch (e) {
+        setSections(DEFAULT_SECTIONS);
+      }
+    } else {
+      setSections(DEFAULT_SECTIONS);
+      localStorage.setItem('sachi_sections', JSON.stringify(DEFAULT_SECTIONS));
+    }
+
+    // Load minor sections
+    const savedMinorSections = localStorage.getItem('sachi_minor_sections');
+    if (savedMinorSections) {
+      try {
+        setMinorSections(JSON.parse(savedMinorSections));
+      } catch (e) {
+        setMinorSections(DEFAULT_MINOR_SECTIONS);
+      }
+    } else {
+      setMinorSections(DEFAULT_MINOR_SECTIONS);
+      localStorage.setItem('sachi_minor_sections', JSON.stringify(DEFAULT_MINOR_SECTIONS));
+    }
+
     // Load links
     const savedLinks = localStorage.getItem('sachi_custom_links');
     if (savedLinks) {
@@ -163,10 +247,16 @@ export default function App() {
 
   // Restore defaults function
   const handleRestoreDefaults = () => {
-    if (window.confirm('Bạn có chắc chắn muốn khôi phục dữ liệu liên kết nguyên bản của Sachi? Các liên kết tự thiết lập thêm sẽ được làm sạch.')) {
+    if (window.confirm('Bạn có chắc chắn muốn khôi phục dữ liệu liên kết và danh mục nguyên bản của Sachi? Các thiết lập thêm sẽ được làm sạch.')) {
       setLinks(DEFAULT_SACHI_LINKS);
       localStorage.setItem('sachi_custom_links', JSON.stringify(DEFAULT_SACHI_LINKS));
       
+      setSections(DEFAULT_SECTIONS);
+      localStorage.setItem('sachi_sections', JSON.stringify(DEFAULT_SECTIONS));
+
+      setMinorSections(DEFAULT_MINOR_SECTIONS);
+      localStorage.setItem('sachi_minor_sections', JSON.stringify(DEFAULT_MINOR_SECTIONS));
+
       const defaultFavs = ['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline'];
       setFavorites(defaultFavs);
       localStorage.setItem('sachi_favorites', JSON.stringify(defaultFavs));
@@ -219,6 +309,98 @@ export default function App() {
     }
   };
 
+  // Save updated major sections structure from section editor modal
+  const handleSaveSections = (updated: SachiSection[]) => {
+    setSections(updated);
+    localStorage.setItem('sachi_sections', JSON.stringify(updated));
+    triggerNotification('Đã thay đổi cấu trúc mục lớn thành công!', 'success');
+  };
+
+  // Save updated minor sections structure from section editor modal
+  const handleSaveMinorSections = (updated: SachiMinorSection[]) => {
+    setMinorSections(updated);
+    localStorage.setItem('sachi_minor_sections', JSON.stringify(updated));
+    triggerNotification('Đã thay đổi cấu trúc mục nhỏ thành công!', 'success');
+  };
+
+  // Quick save for edited major section from QuickEditModal
+  const handleSaveSectionQuick = (updatedSec: SachiSection) => {
+    const updated = sections.map(s => s.id === updatedSec.id ? updatedSec : s);
+    setSections(updated);
+    localStorage.setItem('sachi_sections', JSON.stringify(updated));
+    triggerNotification(`Đã lưu thay đổi mục lớn "${updatedSec.name}"`, 'success');
+  };
+
+  // Quick save for edited minor section from QuickEditModal, including cascading link group titles rename
+  const handleSaveMinorSectionQuick = (oldId: string, updatedMinor: SachiMinorSection) => {
+    // 1. Update minor sections state and localStorage
+    const updatedMs = minorSections.map(m => m.id === oldId ? updatedMinor : m);
+    setMinorSections(updatedMs);
+    localStorage.setItem('sachi_minor_sections', JSON.stringify(updatedMs));
+
+    // 2. Cascade rename matching links' groupTitle
+    if (oldId !== updatedMinor.id) {
+      const updatedLinks = links.map(link => {
+        if (link.groupTitle === oldId) {
+          return {
+            ...link,
+            groupTitle: updatedMinor.id,
+          };
+        }
+        return link;
+      });
+      setLinks(updatedLinks);
+      localStorage.setItem('sachi_custom_links', JSON.stringify(updatedLinks));
+    }
+    
+    triggerNotification(`Đã lưu thay đổi mục nhỏ "${updatedMinor.id}"`, 'success');
+  };
+
+  // Direct actions to add other sections
+  const handleAddNewMajorSection = () => {
+    const titles = sections.map(s => parseInt(s.title)).filter(n => !isNaN(n));
+    const nextNum = titles.length > 0 ? Math.max(...titles) + 1 : sections.length + 1;
+    
+    const newId = `custom_section_${Date.now()}`;
+    const newSection: SachiSection = {
+      id: newId,
+      title: nextNum.toString(),
+      name: `Mục ${nextNum}`,
+      description: 'Nhập mô tả tóm tắt vai trò và danh mục tài nguyên của mục lớn này...',
+      badge: 'SACHI',
+    };
+    
+    const updated = [...sections, newSection];
+    setSections(updated);
+    localStorage.setItem('sachi_sections', JSON.stringify(updated));
+    
+    setEditingSection(newSection);
+    setEditingMinorSection(null);
+    setIsQuickEditOpen(true);
+    triggerNotification('Đã tạo mục lớn mới. Hãy cấu hình tên và link của mục!', 'success');
+  };
+
+  const handleAddNewMinorSection = () => {
+    const titles = minorSections.map(s => parseInt(s.title)).filter(n => !isNaN(n));
+    const nextNum = titles.length > 0 ? Math.max(...titles) + 1 : minorSections.length + 1;
+    
+    const defaultName = `Mục nhỏ ${nextNum}`;
+    const newMinorSection: SachiMinorSection = {
+      id: defaultName,
+      title: nextNum.toString(),
+      url: '',
+    };
+    
+    const updated = [...minorSections, newMinorSection];
+    setMinorSections(updated);
+    localStorage.setItem('sachi_minor_sections', JSON.stringify(updated));
+    
+    setEditingSection(null);
+    setEditingMinorSection(newMinorSection);
+    setIsQuickEditOpen(true);
+    triggerNotification('Đã tạo mục nhỏ mới. Hãy cấu hình tên và link của mục!', 'success');
+  };
+
   // Initialize and open Editor Model for new
   const handleCreateNewClick = () => {
     setLinkToEdit(null);
@@ -253,9 +435,7 @@ export default function App() {
   const processedLinks = useMemo(() => {
     return links.filter(link => {
       // 1. Sidebar Section navigation filter
-      if (selectedSection === 'reports_plans' && link.section !== 'reports_plans') return false;
-      if (selectedSection === 'booking_tiktok' && link.section !== 'booking_tiktok') return false;
-      if (selectedSection === 'training' && link.section !== 'training') return false;
+      if (selectedSection !== 'all' && selectedSection !== 'favorites' && link.section !== selectedSection) return false;
       if (selectedSection === 'favorites' && !favorites.includes(link.id)) return false;
 
       // 2. Head Filter Type (Attached vs Updating)
@@ -326,6 +506,66 @@ export default function App() {
     return map;
   }, [partitionedBookingTikTok.tiktokList]);
 
+  const getSectionStyle = (secId: string) => {
+    switch (secId) {
+      case 'reports_plans':
+        return {
+          icon: 'LineChart',
+          borderClass: 'border-sky-100',
+          headerClass: 'bg-gradient-to-r from-sky-400/5 to-emerald-50/10 border-b border-sky-100/50',
+          iconBgClass: 'bg-sky-100 text-sky-600',
+          badgeColorClass: 'text-sky-600 bg-sky-50',
+          cardGradient: 'from-slate-50/80 to-white hover:to-sky-50/15 border border-slate-100 hover:border-sky-200/80',
+          accentColor: 'sky',
+        };
+      case 'booking_tiktok':
+        return {
+          icon: 'Video',
+          borderClass: 'border-teal-100',
+          headerClass: 'bg-gradient-to-r from-emerald-50/40 via-sky-50/10 to-teal-50/10 border-b border-teal-100/50',
+          iconBgClass: 'bg-teal-100 text-teal-600',
+          badgeColorClass: 'text-teal-600 bg-teal-100/65',
+          cardGradient: 'from-slate-50/80 to-white hover:to-teal-50/15 border border-slate-100 hover:border-teal-200/80',
+          accentColor: 'teal',
+        };
+      case 'training':
+        return {
+          icon: 'BookOpen',
+          borderClass: 'border-emerald-100',
+          headerClass: 'bg-gradient-to-r from-emerald-400/5 to-sky-50/10 border-b border-emerald-100/50',
+          iconBgClass: 'bg-emerald-100 text-emerald-600',
+          badgeColorClass: 'text-emerald-600 bg-emerald-50',
+          cardGradient: 'from-slate-50/80 to-white hover:to-emerald-50/15 border border-slate-100 hover:border-emerald-200',
+          accentColor: 'emerald',
+        };
+      default:
+        return {
+          icon: 'FolderOpen',
+          borderClass: 'border-purple-100',
+          headerClass: 'bg-gradient-to-r from-purple-500/5 via-white to-pink-500/5 border-b border-purple-100/50',
+          iconBgClass: 'bg-purple-100 text-purple-600',
+          badgeColorClass: 'text-purple-600 bg-purple-50',
+          cardGradient: 'from-slate-50/80 to-white hover:to-purple-50/15 border border-slate-100 hover:border-purple-200',
+          accentColor: 'purple',
+        };
+    }
+  };
+
+  if (!isLoggedIn) {
+    return (
+      <LoginScreen
+        onLoginSuccess={(username) => {
+          localStorage.setItem('sachi_logged_in', 'true');
+          localStorage.setItem('sachi_current_user', username);
+          setIsLoggedIn(true);
+          setCurrentUser(username);
+          setNotification({ message: `Chào mừng ${username} quay trở lại hệ thống Sachi!`, type: 'success' });
+          setTimeout(() => setNotification(null), 4000);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex" style={{ fontFamily: 'var(--font-sans)' }}>
       
@@ -370,56 +610,45 @@ export default function App() {
             </span>
           </button>
 
-          <button
-            onClick={() => setSelectedSection('reports_plans')}
-            className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-medium rounded-xl transition-all cursor-pointer ${
-              selectedSection === 'reports_plans'
-                ? 'bg-sky-50 text-sky-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <LucideIcon name="LineChart" size={17} className={selectedSection === 'reports_plans' ? 'text-sky-600' : 'text-slate-400'} />
-              <span>Báo cáo & Kế hoạch</span>
-            </div>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-              {links.filter(l => l.section === 'reports_plans').length}
-            </span>
-          </button>
+          {sections.map(sec => {
+            const isSelected = selectedSection === sec.id;
+            const getIcon = () => {
+              if (sec.id === 'reports_plans') return 'LineChart';
+              if (sec.id === 'booking_tiktok') return 'Video';
+              if (sec.id === 'training') return 'BookOpen';
+              return 'FolderOpen';
+            };
+            const getColors = () => {
+              if (!isSelected) return 'text-slate-600 hover:bg-slate-50 hover:text-slate-900';
+              if (sec.id === 'reports_plans') return 'bg-sky-50 text-sky-700 shadow-xs';
+              if (sec.id === 'booking_tiktok') return 'bg-indigo-50/60 text-sky-700 shadow-xs';
+              if (sec.id === 'training') return 'bg-emerald-50/60 text-emerald-700 shadow-xs';
+              return 'bg-purple-50/60 text-purple-700 shadow-xs';
+            };
+            const getIconColor = () => {
+              if (!isSelected) return 'text-slate-400';
+              if (sec.id === 'reports_plans') return 'text-sky-600';
+              if (sec.id === 'booking_tiktok') return 'text-indigo-600';
+              if (sec.id === 'training') return 'text-emerald-600';
+              return 'text-purple-600';
+            };
 
-          <button
-            onClick={() => setSelectedSection('booking_tiktok')}
-            className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-medium rounded-xl transition-all cursor-pointer ${
-              selectedSection === 'booking_tiktok'
-                ? 'bg-indigo-50/60 text-sky-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <LucideIcon name="Video" size={17} className={selectedSection === 'booking_tiktok' ? 'text-sky-600' : 'text-slate-400'} />
-              <span>Booking & TikTok</span>
-            </div>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-              {links.filter(l => l.section === 'booking_tiktok').length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setSelectedSection('training')}
-            className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-medium rounded-xl transition-all cursor-pointer ${
-              selectedSection === 'training'
-                ? 'bg-emerald-50/60 text-emerald-700 shadow-xs'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <LucideIcon name="BookOpen" size={17} className={selectedSection === 'training' ? 'text-emerald-600' : 'text-slate-400'} />
-              <span>Tài liệu Đào tạo</span>
-            </div>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-              {links.filter(l => l.section === 'training').length}
-            </span>
-          </button>
+            return (
+              <button
+                key={sec.id}
+                onClick={() => setSelectedSection(sec.id)}
+                className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-medium rounded-xl transition-all cursor-pointer ${getColors()}`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <LucideIcon name={getIcon()} size={17} className={getIconColor()} />
+                  <span>{sec.name}</span>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                  {links.filter(l => l.section === sec.id).length}
+                </span>
+              </button>
+            );
+          })}
 
           <div className="h-px bg-slate-100/80 my-4" />
 
@@ -516,14 +745,25 @@ export default function App() {
 
             <div className="w-[1px] h-6 bg-slate-200" />
 
-            <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-emerald-100/50 p-1.5 pr-3 rounded-full border border-emerald-50">
-              <div className="w-7 h-7 rounded-full bg-emerald-500 text-white font-display font-bold text-sm flex items-center justify-center">
-                S
+            <div className="flex items-center gap-3 animate-fade-in">
+              <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-emerald-100/50 p-1.5 pr-3 rounded-full border border-emerald-50/85">
+                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-display font-bold text-xs flex items-center justify-center shadow-xs">
+                  {currentUser.substring(0, 2).toUpperCase()}
+                </div>
+                <div className="hidden md:block text-left text-[10px]">
+                  <p className="font-bold text-slate-700 leading-tight">{currentUser}</p>
+                  <p className="text-[9px] text-emerald-600 font-medium">Đã đăng nhập</p>
+                </div>
               </div>
-              <div className="hidden md:block text-left text-[10px]">
-                <p className="font-bold text-slate-700 leading-tight">Sachi Admin</p>
-                <p className="text-[9px] text-slate-400">luongganh6@..</p>
-              </div>
+
+              <button
+                onClick={handleLogout}
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all flex items-center gap-1 cursor-pointer border border-transparent hover:border-rose-100"
+                title="Đăng xuất khỏi hệ thống"
+              >
+                <LucideIcon name="LogOut" size={16} />
+                <span className="hidden sm:inline text-xs font-semibold">Đăng xuất</span>
+              </button>
             </div>
           </div>
         </header>
@@ -541,30 +781,28 @@ export default function App() {
               >
                 <LucideIcon name="Layers" size={14} /> Tất cả ({links.length})
               </button>
-              <button
-                onClick={() => { setSelectedSection('reports_plans'); setIsMobileMenuOpen(false); }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium cursor-pointer ${
-                  selectedSection === 'reports_plans' ? 'bg-sky-50 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <LucideIcon name="LineChart" size={14} /> Báo cáo & KH
-              </button>
-              <button
-                onClick={() => { setSelectedSection('booking_tiktok'); setIsMobileMenuOpen(false); }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium cursor-pointer ${
-                  selectedSection === 'booking_tiktok' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <LucideIcon name="Video" size={14} /> Booking/TikTok
-              </button>
-              <button
-                onClick={() => { setSelectedSection('training'); setIsMobileMenuOpen(false); }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium cursor-pointer ${
-                  selectedSection === 'training' ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <LucideIcon name="BookOpen" size={14} /> Đào tạo
-              </button>
+              
+              {sections.map(sec => {
+                const isSelected = selectedSection === sec.id;
+                const getIcon = () => {
+                  if (sec.id === 'reports_plans') return 'LineChart';
+                  if (sec.id === 'booking_tiktok') return 'Video';
+                  if (sec.id === 'training') return 'BookOpen';
+                  return 'FolderOpen';
+                };
+                return (
+                  <button
+                    key={sec.id}
+                    onClick={() => { setSelectedSection(sec.id); setIsMobileMenuOpen(false); }}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium cursor-pointer truncate ${
+                      isSelected ? 'bg-sky-50 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <LucideIcon name={getIcon()} size={14} /> {sec.name}
+                  </button>
+                );
+              })}
+
               <button
                 onClick={() => { setSelectedSection('favorites'); setIsMobileMenuOpen(false); }}
                 className={`col-span-2 flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-medium cursor-pointer ${
@@ -575,9 +813,15 @@ export default function App() {
                 <span>Danh mục yêu thích ({favorites.length})</span>
               </button>
             </div>
-            <div className="pt-2 border-t border-slate-100 flex justify-between text-[10px] text-slate-400">
-              <span>Định vị: Sản phẩm mẹ & bé Sachi</span>
-              <button onClick={handleRestoreDefaults} className="text-sky-600 font-bold">Khôi phục gốc</button>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 gap-2">
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 py-1 px-2 rounded-lg">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span className="font-bold text-slate-700">{currentUser}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={handleRestoreDefaults} className="text-sky-600 font-bold">Khôi phục gốc</button>
+                <button onClick={handleLogout} className="text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded-lg">Đăng xuất</button>
+              </div>
             </div>
           </div>
         )}
@@ -667,38 +911,70 @@ export default function App() {
               </div>
 
               {/* Advanced Filter option segments */}
-              <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100 shrink-0">
+              <div className="flex flex-wrap md:flex-nowrap gap-2 items-center shrink-0">
+                <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100 shrink-0">
+                  <button
+                    onClick={() => setFilterType('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all ${
+                      filterType === 'all'
+                        ? 'bg-white text-sky-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Tất cả liên kết
+                  </button>
+                  <button
+                    onClick={() => setFilterType('attached')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                      filterType === 'attached'
+                        ? 'bg-white text-emerald-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Đã gắn link ({links.filter(l => !!l.url).length})
+                  </button>
+                  <button
+                    onClick={() => setFilterType('updating')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                      filterType === 'updating'
+                        ? 'bg-white text-amber-700 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Đang cập nhật ({links.filter(l => !l.url).length})
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setFilterType('all')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all ${
-                    filterType === 'all'
-                      ? 'bg-white text-sky-700 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
+                  type="button"
+                  onClick={() => setIsSectionEditorOpen(true)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-600 hover:text-sky-600 hover:bg-sky-50 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  title="Cấu hình số hiệu, tên mục lớn, mục nhỏ và thêm mục mới"
                 >
-                  Tất cả liên kết
+                  <LucideIcon name="Settings" size={13} className="text-slate-400 animate-spin-hover" />
+                  <span>Cấu hình</span>
                 </button>
+
                 <button
-                  onClick={() => setFilterType('attached')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    filterType === 'attached'
-                      ? 'bg-white text-emerald-700 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
+                  type="button"
+                  onClick={handleAddNewMajorSection}
+                  className="px-3.5 py-2 bg-sky-500 hover:bg-sky-600 border border-sky-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-xs hover:shadow-sm"
+                  title="Thêm mục lớn mới vào bảng điều khiển"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Đã gắn link ({links.filter(l => !!l.url).length})
+                  <LucideIcon name="FolderPlus" size={13} className="stroke-[2.5]" />
+                  <span>Mục lớn ➕</span>
                 </button>
+
                 <button
-                  onClick={() => setFilterType('updating')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    filterType === 'updating'
-                      ? 'bg-white text-amber-700 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
+                  type="button"
+                  onClick={handleAddNewMinorSection}
+                  className="px-3.5 py-2 bg-teal-500 hover:bg-teal-600 border border-teal-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-xs hover:shadow-sm"
+                  title="Thêm mục nhỏ mới"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  Đang cập nhật ({links.filter(l => !l.url).length})
+                  <LucideIcon name="Plus" size={13} className="stroke-[2.5]" />
+                  <span>Mục nhỏ ➕</span>
                 </button>
               </div>
             </div>
@@ -851,58 +1127,277 @@ export default function App() {
           ) : (
             // Full Grouped Structured UI (Regular Dashboard)
             <div className="space-y-8">
+              {sections.map(sec => {
+                const secLinks = processedLinks.filter(l => l.section === sec.id);
+                
+                // Decide if we should render this section based on selection and contents
+                const shouldRender = 
+                  selectedSection === 'all' || 
+                  selectedSection === sec.id || 
+                  (selectedSection === 'favorites' && secLinks.length > 0);
+                  
+                if (!shouldRender) return null;
 
-              {/* ======================= MỤC LỚN 1: BÁO CÁO VÀ KẾ HOẠCH ======================= */}
-              {(selectedSection === 'all' || selectedSection === 'reports_plans' || (selectedSection === 'favorites' && groupedData.reports.length > 0)) && (
-                <section className="bg-white rounded-3xl border border-sky-100 shadow-xs overflow-hidden">
-                  <div className="p-5 sm:p-6 bg-gradient-to-r from-sky-400/5 to-emerald-50/10 border-b border-sky-100/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center">
-                        <LucideIcon name="LineChart" size={22} className="stroke-[2.2]" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-display font-bold text-lg text-slate-800">
-                            1
-                          </h3>
-                          <span className="text-xs font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">Sachi S_Team</span>
+                const styles = getSectionStyle(sec.id);
+                const isCollapsed = collapsedGroups[sec.id] || false;
+                
+                // Find minor sections associated with links in this major section
+                const secMinorSecs = minorSections.filter(ms => secLinks.some(l => l.groupTitle === ms.id));
+
+                return (
+                  <section 
+                    key={sec.id} 
+                    className={`bg-white rounded-3xl border ${styles.borderClass} shadow-xs overflow-hidden transition-all duration-300`}
+                  >
+                    {/* Section Header */}
+                    <div className={`p-5 sm:p-6 ${styles.headerClass} flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl ${styles.iconBgClass} flex items-center justify-center`}>
+                          <LucideIcon name={styles.icon} size={22} className="stroke-[2.2]" />
                         </div>
-                        <p className="text-xs text-slate-500">
-                          Bảng tổng hợp báo cáo Digital định kỳ, kế hoạch phân phối nội dung & vận động nhóm chỉ tiêu Marketing hàng tuần
-                        </p>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-display font-bold text-lg text-slate-800">
+                              {sec.title}
+                            </h3>
+                            <span className="font-display font-bold text-base text-slate-800">. {sec.name}</span>
+                            {sec.badge && (
+                              <span className={`text-[10px] font-bold ${styles.badgeColorClass} px-2 py-0.5 rounded-full uppercase ml-1.5`}>
+                                {sec.badge}
+                              </span>
+                            )}
+                          </div>
+                          {sec.description && (
+                            <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                              {sec.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Header Actions */}
+                      <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                        <span className="text-xs text-slate-400 font-mono font-semibold bg-slate-50 border border-slate-150 rounded-lg px-2 py-1">
+                          Số lượng: {secLinks.length}
+                        </span>
+
+                        {/* General master link button */}
+                        {sec.url && (
+                          <a
+                            href={sec.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2.5 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold text-xs rounded-xl transition-all flex items-center gap-1 border border-sky-100/60"
+                            title="Mở thư mục/link tổng quan của mục lớn này"
+                          >
+                            <LucideIcon name="ExternalLink" size={11} />
+                            <span className="hidden sm:inline">Mở link mục</span>
+                          </a>
+                        )}
+
+                        {/* Edit Section Title/Link Button */}
+                        <button
+                          onClick={() => {
+                            setEditingSection(sec);
+                            setEditingMinorSection(null);
+                            setIsQuickEditOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-sky-600 font-semibold text-xs rounded-xl transition-all flex items-center gap-1 border border-slate-150 cursor-pointer"
+                          title="Sửa nhanh tên gọi và link của mục lớn này"
+                        >
+                          <LucideIcon name="Edit3" size={11} />
+                          <span className="hidden sm:inline">Sửa mục lớn</span>
+                        </button>
+
+                        {/* Accordion toggle */}
+                        <button
+                          onClick={() => setCollapsedGroups(prev => ({ ...prev, [sec.id]: !prev[sec.id] }))}
+                          className="p-1.5 bg-slate-100/85 hover:bg-slate-200/50 text-slate-500 rounded-lg transition-colors cursor-pointer"
+                          title={isCollapsed ? 'Mở rộng' : 'Thu hẹp'}
+                        >
+                          <LucideIcon 
+                            name="ChevronRight" 
+                            className={`transition-transform duration-300 ${!isCollapsed ? 'rotate-90' : ''}`} 
+                            size={16} 
+                          />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 font-mono">
-                        Số lượng: {groupedData.reports.length}
-                      </span>
-                      <button
-                        onClick={() => toggleAccordion('Báo cáo và kế hoạch')}
-                        className="p-1.5 bg-slate-100/80 hover:bg-slate-200/50 text-slate-500 rounded-lg transition-colors cursor-pointer"
-                        title={collapsedGroups['Báo cáo và kế hoạch'] ? 'Mở rộng' : 'Thu hẹp'}
-                      >
-                        <LucideIcon name="ChevronRight" className={`transition-transform duration-300 ${!collapsedGroups['Báo cáo và kế hoạch'] ? 'rotate-90' : ''}`} size={16} />
-                      </button>
-                    </div>
-                  </div>
+                    {/* Section Body (if not collapsed) */}
+                    {!isCollapsed && (
+                      <div className="p-5 sm:p-6">
+                        {secLinks.length === 0 ? (
+                          <div className="text-center py-8">
+                            <span className="text-2xl block mb-1">📁</span>
+                            <p className="text-xs text-slate-400 italic">Chưa có liên kết hoặc tài liệu nào được hiển thị cho mục này.</p>
+                          </div>
+                        ) : secMinorSecs.length > 0 ? (
+                          /* Render as STACKED SUBGROUPS (e.g. Booking KOC, Inhouse TikTok style) */
+                          <div className="space-y-8">
+                            {secMinorSecs.map(ms => {
+                              const msLinks = secLinks.filter(l => l.groupTitle === ms.id);
+                              
+                              // Group links under this minor section by their subGroupTitle
+                              const subGroupMap: Record<string, DashboardLink[]> = {};
+                              msLinks.forEach(item => {
+                                const subKey = item.subGroupTitle || 'Yêu cầu & Chung';
+                                if (!subGroupMap[subKey]) subGroupMap[subKey] = [];
+                                subGroupMap[subKey].push(item);
+                              });
 
-                  {!collapsedGroups['Báo cáo và kế hoạch'] && (
-                    <div className="p-5 sm:p-6">
-                      {groupedData.reports.length === 0 ? (
-                        <p className="text-xs text-slate-400 text-center italic py-4">Chưa có liên kết báo cáo nào phù hợp bộ lọc.</p>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                          {/* Loop through direct non-grouped items like Báo cáo Digital & Kế hoạch Booking */}
-                          {groupedData.reports.map(link => {
-                            // Render individual reports
-                            return (
+                              return (
+                                <div key={ms.id} className="space-y-4">
+                                  {/* Subgroup header block with dynamic line and inline edit triggers */}
+                                  <div className="flex items-center justify-between pb-2 border-b border-sky-100/60 gap-4">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-lg">
+                                        {ms.id.toLowerCase().includes('tiktok') ? '🎬' : '📊'}
+                                      </span>
+                                      <h4 className="font-display font-semibold text-slate-700 text-sm tracking-wide">
+                                        Nhóm {ms.title}: {ms.id}
+                                      </h4>
+                                      {ms.url && (
+                                        <a
+                                          href={ms.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2 py-0.5 bg-teal-50 text-teal-700 hover:bg-teal-100 font-bold text-[10px] rounded-lg border border-teal-100 flex items-center gap-1 transition-all"
+                                          title="Mở link tổng quan"
+                                        >
+                                          <LucideIcon name="ExternalLink" size={9} />
+                                          <span>Link</span>
+                                        </a>
+                                      )}
+                                    </div>
+
+                                    {/* Direct Edit Button of Minor Section inside header */}
+                                    <button
+                                      onClick={() => {
+                                        setEditingSection(null);
+                                        setEditingMinorSection(ms);
+                                        setIsQuickEditOpen(true);
+                                      }}
+                                      className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-teal-600 rounded-lg border border-slate-150 text-[10px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                                      title="Sửa tên hoặc gắn link cho nhóm/mục nhỏ này"
+                                    >
+                                      <LucideIcon name="Edit3" size={11} />
+                                      <span>Sửa mục nhỏ</span>
+                                    </button>
+                                  </div>
+
+                                  {msLinks.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic py-2 text-center">Chưa có liên kết nào nhóm này.</p>
+                                  ) : (
+                                    /* Grid of subGroup cards, e.g. Agency Cards */
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                      {Object.entries(subGroupMap).map(([sgName, sgLinks]) => (
+                                        <div 
+                                          key={sgName}
+                                          className="bg-slate-50/70 border border-slate-100/90 rounded-2xl p-4.5 hover:shadow-xs hover:bg-slate-50 transition-all flex flex-col justify-between"
+                                        >
+                                          <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-xs">
+                                                  {ms.id.toLowerCase().includes('tiktok') ? '📱' : '🏢'}
+                                                </span>
+                                                <h5 className="font-display font-bold text-slate-800 text-sm">{sgName}</h5>
+                                              </div>
+                                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                {sgLinks.length} tài liệu
+                                              </span>
+                                            </div>
+
+                                            {/* Sub item links list */}
+                                            <div className="space-y-2 pt-1">
+                                              {sgLinks.map(link => (
+                                                <div 
+                                                  key={link.id}
+                                                  className="p-3 bg-white border border-slate-100/55 rounded-xl hover:border-sky-300 hover:shadow-xs transition-colors relative group/item"
+                                                >
+                                                  <div className="flex items-start justify-between gap-1">
+                                                    <div className="max-w-[85%]">
+                                                      <p className="text-xs font-semibold text-slate-700 leading-tight truncate-2-lines" title={link.description}>
+                                                        {link.title}
+                                                      </p>
+                                                    </div>
+
+                                                    <div className="flex flex-col items-end gap-1 shrink-0">
+                                                      {/* Favorite button */}
+                                                      <button 
+                                                        onClick={(e) => toggleFavorite(link.id, e)}
+                                                        className="p-0.5 text-slate-300 hover:text-amber-500 transition-colors cursor-pointer"
+                                                        title="Độ ưu tiên"
+                                                      >
+                                                        <LucideIcon name="Star" size={11} className={favorites.includes(link.id) ? 'text-amber-500 fill-amber-300' : ''} />
+                                                      </button>
+
+                                                      {/* Edit Click */}
+                                                      <button
+                                                        onClick={(e) => handleEditClick(link, e)}
+                                                        className="p-0.5 text-slate-300 opacity-0 group-hover/item:opacity-100 hover:text-sky-600 transition-opacity cursor-pointer"
+                                                        title="Sửa liên kết"
+                                                      >
+                                                        <LucideIcon name="Edit3" size={11} />
+                                                      </button>
+                                                    </div>
+                                                  </div>
+
+                                                  {link.description && (
+                                                    <p className="text-[10px] text-slate-400 mt-1 line-clamp-1 leading-snug">
+                                                      {link.description}
+                                                    </p>
+                                                  )}
+
+                                                  {/* Bottom layout */}
+                                                  <div className="mt-3 flex items-center justify-between pt-1 border-t border-slate-50">
+                                                    {link.url ? (
+                                                      <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                                                        Đã gắn link
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-[9px] text-amber-500 font-bold bg-amber-50 px-1.5 py-0.5 rounded-md">
+                                                        Đang cập nhật
+                                                      </span>
+                                                    )}
+
+                                                    {link.url ? (
+                                                      <a
+                                                        href={link.url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-[10px] text-sky-600 font-semibold hover:text-sky-700 inline-flex items-center gap-0.5"
+                                                      >
+                                                        Mở file
+                                                        <LucideIcon name="ExternalLink" size={10} />
+                                                      </a>
+                                                    ) : (
+                                                      <span className="text-[10px] text-slate-400 italic">Trống</span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          /* Render as FLAT GRID (Section 1 or 3 style) */
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {secLinks.map(link => (
                               <div
                                 key={link.id}
-                                className="group bg-gradient-to-br from-slate-50/80 to-white hover:to-sky-50/15 border border-slate-100 hover:border-sky-200/80 rounded-2xl p-5 hover:shadow-md transition-all duration-300 relative flex flex-col justify-between"
+                                className={`group bg-gradient-to-br 	ext-slate-800 ${styles.cardGradient} rounded-2xl p-5 hover:shadow-md transition-all duration-300 relative flex flex-col justify-between`}
                               >
                                 <div>
-                                  {/* Fav Star Button */}
+                                  {/* Star Button */}
                                   <button
                                     onClick={(e) => toggleFavorite(link.id, e)}
                                     className="absolute top-4 right-4 p-1.5 rounded-lg bg-white border border-slate-100 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-500 transition-all text-slate-400 z-10 cursor-pointer"
@@ -912,38 +1407,41 @@ export default function App() {
                                   </button>
 
                                   <div className="flex gap-3 mb-2.5">
-                                    <div className="p-2.5 bg-white text-sky-600 rounded-xl border border-sky-100/50">
+                                    <div className={`p-2.5 bg-white text-${styles.accentColor}-600 rounded-xl border border-${styles.accentColor}-100/55`}>
                                       <LucideIcon name={link.iconName} size={18} />
                                     </div>
                                     <div className="pr-4 flex-1">
+                                      <h4 className={`font-display font-semibold text-slate-800 text-sm group-hover:text-${styles.accentColor}-700 transition-colors`}>
+                                        {link.title}
+                                      </h4>
                                       {link.subGroupTitle && (
-                                        <span className="text-[9px] font-bold text-sky-600 bg-sky-50 border border-sky-100/50 px-2 py-0.5 rounded-md mb-1 inline-block">
+                                        <span className="inline-block text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mt-1">
                                           {link.subGroupTitle}
                                         </span>
                                       )}
-                                      <h4 className="font-display font-semibold text-slate-800 text-sm group-hover:text-sky-700 transition-colors">
-                                        {link.title}
-                                      </h4>
                                     </div>
                                   </div>
+
+                                  <p className="text-xs text-slate-500 min-h-[40px] leading-relaxed line-clamp-2 mt-1">
+                                    {link.description}
+                                  </p>
                                 </div>
 
                                 <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between">
                                   {link.url ? (
-                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md max-w-max">
-                                      Đã gắn link
+                                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-md">
+                                      Báo cáo sẵn sàng
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md max-w-max">
-                                      Đang cập nhật
+                                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-md">
+                                      Chưa cập nhật
                                     </span>
                                   )}
 
                                   <div className="flex gap-2">
                                     <button
                                       onClick={(e) => handleEditClick(link, e)}
-                                      className="p-1 text-slate-400 hover:text-sky-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
-                                      title="Sửa file"
+                                      className="p-1 px-2 text-slate-400 hover:text-sky-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
                                     >
                                       Sửa
                                     </button>
@@ -951,7 +1449,7 @@ export default function App() {
                                     {link.id.startsWith('custom-') && (
                                       <button
                                         onClick={(e) => handleDeleteLink(link.id, link.title, e)}
-                                        className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-1 rounded-lg text-xs"
+                                        className="p-1 text-rose-500 hover:text-rose-700 px-1 rounded-lg text-xs"
                                         title="Xóa"
                                       >
                                         Xóa
@@ -963,396 +1461,30 @@ export default function App() {
                                         href={link.url}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="p-1 px-3 bg-sky-500 hover:bg-sky-600 text-white select-none rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5"
+                                        className="p-1 px-3.5 bg-sky-500 hover:bg-sky-600 text-white select-none rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5 pb-1"
                                       >
-                                        Mở file
+                                        Truy cập
                                         <LucideIcon name="ExternalLink" size={11} />
                                       </a>
                                     ) : (
                                       <button
                                         disabled
-                                        className="p-1 px-3 bg-slate-100 text-slate-400 rounded-lg text-xs font-semibold tracking-tight cursor-not-allowed"
-                                        title="Sẽ khả dụng sau khi gắn link"
+                                        className="p-1 px-3.5 bg-slate-100 text-slate-400 rounded-lg text-xs font-semibold tracking-tight cursor-not-allowed"
                                       >
-                                        Mở file
+                                        Đang đợi
                                       </button>
                                     )}
                                   </div>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </section>
-              )}
-
-
-              {/* ======================= MỤC LỚN 2: BOOKING & TIKTOK ======================= */}
-              {(selectedSection === 'all' || selectedSection === 'booking_tiktok' || (selectedSection === 'favorites' && groupedData.bookingAndTiktok.length > 0)) && (
-                <section className="bg-white rounded-3xl border border-teal-100 shadow-xs overflow-hidden">
-                  
-                  {/* Category Header */}
-                  <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-50/40 via-sky-50/10 to-teal-50/10 border-b border-teal-100/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-teal-100 text-teal-600 flex items-center justify-center">
-                        <LucideIcon name="Video" size={22} className="stroke-[2.2]" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-display font-bold text-lg text-slate-800">
-                            2
-                          </h3>
-                          <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full uppercase">KOC & TikTok</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          Theo dõi tiến độ booking các đối tác Agency (We Win, Onetone, Lê Gia...) và kịch bản/kênh TikTok inhouse Sachi
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 font-mono">
-                        Số lượng: {groupedData.bookingAndTiktok.length}
-                      </span>
-                      <button
-                        onClick={() => toggleAccordion('Booking KOC')}
-                        className="p-1.5 bg-slate-100/80 hover:bg-slate-200/50 text-slate-500 rounded-lg transition-colors cursor-pointer"
-                        title={collapsedGroups['Booking KOC'] ? 'Mở rộng' : 'Thu hẹp'}
-                      >
-                        <LucideIcon name="ChevronRight" className={`transition-transform duration-300 ${!collapsedGroups['Booking KOC'] ? 'rotate-90' : ''}`} size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {!collapsedGroups['Booking KOC'] && (
-                    <div className="p-5 sm:p-6 space-y-8">
-                      
-                      {/* SUB-SECTION 2.1: Booking KOC */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2 pb-1.5 border-b border-sky-100/55">
-                          <span className="text-lg">📊</span>
-                          <h4 className="font-display font-semibold text-slate-700 text-sm tracking-wide">1</h4>
-                        </div>
-
-                        {partitionedBookingTikTok.kocList.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic py-3 text-center">Không có agency booking nào khớp bộ lọc.</p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {Object.entries(bookingKocByAgency).map(([agencyName, linksData]) => {
-                              const agencyLinks = linksData as DashboardLink[];
-                              return (
-                                <div
-                                  key={agencyName}
-                                  className="bg-slate-50/70 border border-slate-100/90 rounded-2xl p-4.5 hover:shadow-xs transition-all flex flex-col justify-between"
-                                >
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs">🏢</span>
-                                        <h5 className="font-display font-bold text-slate-800 text-sm">{agencyName}</h5>
-                                      </div>
-                                      <span className="text-[9px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
-                                        {agencyLinks.length} tài liệu
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-2 pt-1">
-                                      {agencyLinks.map(link => (
-                                      <div
-                                        key={link.id}
-                                        className="p-3 bg-white border border-sky-100/30 rounded-xl hover:border-sky-300 hover:shadow-xs transition-all relative group/item"
-                                      >
-                                        <div className="flex items-start justify-between gap-1">
-                                          <div className="max-w-[80%]">
-                                            <p className="text-xs font-semibold text-slate-700 leading-tight truncate-2-lines">{link.title}</p>
-                                          </div>
-
-                                          <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                            {/* Stars Favorite */}
-                                            <button
-                                              onClick={(e) => toggleFavorite(link.id, e)}
-                                              className="p-0.5 hover:text-amber-500 text-slate-300 transition-colors cursor-pointer"
-                                              title={favorites.includes(link.id) ? 'Yêu thích' : 'Không có'}
-                                            >
-                                              <LucideIcon name="Star" size={12} className={favorites.includes(link.id) ? 'text-amber-500 fill-amber-300' : ''} />
-                                            </button>
-                                            
-                                            <button
-                                              onClick={(e) => handleEditClick(link, e)}
-                                              className="p-0.5 text-slate-300 hover:text-sky-600 opacity-0 group-hover/item:opacity-100 transition-opacity"
-                                              title="Sửa URL"
-                                            >
-                                              <LucideIcon name="Edit3" size={11} />
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        <div className="mt-3 flex items-center justify-between">
-                                          {link.url ? (
-                                            <span className="text-[9px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded-md">
-                                              Đáo hạn
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] text-amber-500 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md">
-                                              Cập nhật
-                                            </span>
-                                          )}
-
-                                          {link.url ? (
-                                            <a
-                                              href={link.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-[10px] font-bold text-sky-600 hover:text-sky-700 flex items-center gap-0.5"
-                                            >
-                                              Mở file
-                                              <LucideIcon name="ExternalLink" size={10} />
-                                            </a>
-                                          ) : (
-                                            <span className="text-[10px] text-slate-400 italic">Chờ link</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                              );
-                            })}
+                            ))}
                           </div>
                         )}
                       </div>
-
-                      {/* SUB-SECTION 2.2: Inhouse TikTok */}
-                      <div className="space-y-4 pt-4 border-t border-slate-100">
-                        <div className="flex items-center gap-2 pb-1.5 border-b border-sky-100/55">
-                          <span className="text-lg">🎬</span>
-                          <h4 className="font-display font-semibold text-slate-700 text-sm tracking-wide">2</h4>
-                        </div>
-
-                        {partitionedBookingTikTok.tiktokList.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic py-3 text-center">Không có kênh TikTok inhouse nào khớp bộ lọc.</p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {Object.entries(tiktokByChannel).map(([channelName, linksData]) => {
-                              const channelLinks = linksData as DashboardLink[];
-                              return (
-                                <div
-                                  key={channelName}
-                                  className="bg-slate-50/70 border border-slate-100 rounded-2xl p-4.5 hover:shadow-xs transition-all flex flex-col justify-between"
-                                >
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="p-1 px-1.5 bg-sky-100 text-sky-600 rounded-lg text-[10px]">TikTok</span>
-                                        <h5 className="font-display font-bold text-slate-800 text-sm">{channelName}</h5>
-                                      </div>
-                                      <span className="text-[9px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">
-                                        {channelLinks.length} mục
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-2 pt-1">
-                                      {channelLinks.map(link => (
-                                      <div
-                                        key={link.id}
-                                        className="p-3 bg-white border border-slate-100 rounded-xl hover:border-teal-200 transition-all relative group/item"
-                                      >
-                                        <div className="flex items-start justify-between gap-1">
-                                          <div className="max-w-[85%]">
-                                            <p className="text-xs font-semibold text-slate-700 leading-tight">{link.title}</p>
-                                          </div>
-                                          
-                                          <div className="flex flex-col items-end gap-1 shrink-0">
-                                            {/* Stars Favorite */}
-                                            <button
-                                              onClick={(e) => toggleFavorite(link.id, e)}
-                                              className="p-0.5 text-slate-300 hover:text-amber-500 transition-colors pointer-events-auto"
-                                            >
-                                              <LucideIcon name="Star" size={11} className={favorites.includes(link.id) ? 'text-amber-500 fill-amber-300' : ''} />
-                                            </button>
-                                            
-                                            <button
-                                              onClick={(e) => handleEditClick(link, e)}
-                                              className="p-0.5 text-slate-300 opacity-0 group-hover/item:opacity-100 hover:text-sky-600 transition-opacity"
-                                              title="Sửa link"
-                                            >
-                                              <LucideIcon name="Edit3" size={11} />
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        <div className="mt-3.5 flex items-center justify-between pt-1 border-t border-slate-50">
-                                          {link.url ? (
-                                            <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md">
-                                              Đã gắn link
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] text-amber-500 font-bold bg-amber-50 px-1.5 py-0.5 rounded-md">
-                                              Đang cập nhật
-                                            </span>
-                                          )}
-
-                                          {link.url ? (
-                                            <a
-                                              href={link.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-[10px] text-sky-600 font-semibold hover:text-sky-700 inline-flex items-center gap-0.5"
-                                            >
-                                              Truy cập
-                                              <LucideIcon name="ExternalLink" size={10} />
-                                            </a>
-                                          ) : (
-                                            <span className="text-[10px] text-slate-400 italic">Trống</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                    </div>
-                  )}
-                </section>
-              )}
-
-
-              {/* ======================= MỤC LỚN 3: ĐÀO TẠO ======================= */}
-              {(selectedSection === 'all' || selectedSection === 'training' || (selectedSection === 'favorites' && groupedData.training.length > 0)) && (
-                <section className="bg-white rounded-3xl border border-emerald-100 shadow-xs overflow-hidden">
-                  <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-400/5 to-sky-50/10 border-b border-emerald-100/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                        <LucideIcon name="BookOpen" size={22} className="stroke-[2.2]" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-display font-bold text-lg text-slate-800">
-                            3
-                          </h3>
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">Kế Thừa</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          Các tài nguyên đào tạo, cẩm nang Brand Guideline, nguyên liệu hình ảnh, video raw trong drive phục vụ thương bá Sachi
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 font-mono">
-                        Số lượng: {groupedData.training.length}
-                      </span>
-                      <button
-                        onClick={() => toggleAccordion('Đào tạo')}
-                        className="p-1.5 bg-slate-100/80 hover:bg-slate-200/50 text-slate-500 rounded-lg transition-colors cursor-pointer"
-                        title={collapsedGroups['Đào tạo'] ? 'Mở rộng' : 'Thu hẹp'}
-                      >
-                        <LucideIcon name="ChevronRight" className={`transition-transform duration-300 ${!collapsedGroups['Đào tạo'] ? 'rotate-90' : ''}`} size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {!collapsedGroups['Đào tạo'] && (
-                    <div className="p-5 sm:p-6">
-                      {groupedData.training.length === 0 ? (
-                        <p className="text-xs text-slate-400 text-center italic py-4">Chưa có tài liệu đào tạo nào khớp bộ lọc.</p>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                          {groupedData.training.map(link => (
-                            <div
-                              key={link.id}
-                              className="group bg-gradient-to-br from-slate-50/80 to-white hover:to-emerald-50/15 border border-slate-100 hover:border-emerald-200 rounded-2xl p-5 hover:shadow-md transition-all duration-300 relative flex flex-col justify-between"
-                            >
-                              <div>
-                                {/* Fav Star Button */}
-                                <button
-                                  onClick={(e) => toggleFavorite(link.id, e)}
-                                  className="absolute top-4 right-4 p-1.5 rounded-lg bg-white border border-slate-100 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-500 transition-all text-slate-400 z-10 cursor-pointer"
-                                  title={favorites.includes(link.id) ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'}
-                                >
-                                  <LucideIcon name="Star" size={13} className={favorites.includes(link.id) ? 'text-amber-500 fill-amber-400' : ''} />
-                                </button>
-
-                                <div className="flex gap-3 mb-2.5">
-                                  <div className="p-2.5 bg-white text-emerald-600 rounded-xl border border-emerald-100/55">
-                                    <LucideIcon name={link.iconName} size={18} />
-                                  </div>
-                                  <div className="pr-4">
-                                    <h4 className="font-display font-semibold text-slate-800 text-sm group-hover:text-emerald-700 transition-colors">
-                                      {link.title}
-                                    </h4>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between">
-                                {link.url ? (
-                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-md">
-                                    Đã liên kết
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-md">
-                                    Đang bận
-                                  </span>
-                                )}
-
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => handleEditClick(link, e)}
-                                    className="p-1 px-2 text-slate-400 hover:text-sky-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    Cập nhật
-                                  </button>
-                                  
-                                  {link.id.startsWith('custom-') && (
-                                    <button
-                                      onClick={(e) => handleDeleteLink(link.id, link.title, e)}
-                                      className="p-1 text-rose-500 hover:text-rose-700 px-1 rounded-lg text-xs"
-                                      title="Xóa"
-                                    >
-                                      Xóa
-                                    </button>
-                                  )}
-
-                                  {link.url ? (
-                                    <a
-                                      href={link.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="p-1 px-3.5 bg-emerald-500 hover:bg-emerald-600 text-white select-none rounded-lg text-xs font-semibold tracking-tight transition-all flex items-center gap-1.5"
-                                    >
-                                      Truy cập
-                                      <LucideIcon name="ExternalLink" size={11} />
-                                    </a>
-                                  ) : (
-                                    <button
-                                      disabled
-                                      className="p-1 px-3.5 bg-slate-100 text-slate-400 rounded-lg text-xs font-semibold tracking-tight cursor-not-allowed"
-                                    >
-                                      Đang đợi
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </section>
-              )}
-
+                    )}
+                  </section>
+                );
+              })}
             </div>
           )}
 
@@ -1370,6 +1502,27 @@ export default function App() {
           onClose={() => setIsEditorOpen(false)}
           onSave={handleSaveLink}
           linkToEdit={linkToEdit}
+          sections={sections}
+        />
+
+        {/* Section Structure Config Modal */}
+        <SectionEditorModal
+          isOpen={isSectionEditorOpen}
+          onClose={() => setIsSectionEditorOpen(false)}
+          sections={sections}
+          minorSections={minorSections}
+          onSaveSections={handleSaveSections}
+          onSaveMinorSections={handleSaveMinorSections}
+        />
+
+        {/* Quick Edit Popup Modal for Major & Minor sections */}
+        <QuickEditModal
+          isOpen={isQuickEditOpen}
+          onClose={() => setIsQuickEditOpen(false)}
+          section={editingSection}
+          minorSection={editingMinorSection}
+          onSaveSection={handleSaveSectionQuick}
+          onSaveMinorSection={handleSaveMinorSectionQuick}
         />
 
         {/* Footer Area */}
