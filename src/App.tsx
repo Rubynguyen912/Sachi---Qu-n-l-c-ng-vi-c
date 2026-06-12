@@ -115,11 +115,18 @@ export default function App() {
     return localStorage.getItem('sachi_current_user') || '';
   });
 
+
+
+  // Persistence Tracking States
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   const handleLogout = () => {
     localStorage.removeItem('sachi_logged_in');
     localStorage.removeItem('sachi_current_user');
     setIsLoggedIn(false);
     setCurrentUser('');
+    setIsDataLoaded(false);
     setIsMobileMenuOpen(false);
   };
 
@@ -161,62 +168,133 @@ export default function App() {
   // Success Notification banner
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
 
-  // Load initial settings
+  // 1. Initial Load of state partitioned by current logged-in user
   useEffect(() => {
-    // Load sections
-    const savedSections = localStorage.getItem('sachi_sections');
-    if (savedSections) {
-      try {
-        setSections(JSON.parse(savedSections));
-      } catch (e) {
-        setSections(DEFAULT_SECTIONS);
-      }
-    } else {
-      setSections(DEFAULT_SECTIONS);
-      localStorage.setItem('sachi_sections', JSON.stringify(DEFAULT_SECTIONS));
+    if (!isLoggedIn || !currentUser) {
+      setIsDataLoaded(false);
+      return;
     }
 
-    // Load minor sections
-    const savedMinorSections = localStorage.getItem('sachi_minor_sections');
-    if (savedMinorSections) {
+    const key = `sachi_data_${currentUser}`;
+    const rawData = localStorage.getItem(key);
+
+    if (rawData) {
       try {
-        setMinorSections(JSON.parse(savedMinorSections));
+        const parsed = JSON.parse(rawData);
+        
+        // Structure and Schema Version Control validation
+        if (parsed && parsed.dashboardDataVersion === 1) {
+          if (Array.isArray(parsed.links)) setLinks(parsed.links);
+          if (Array.isArray(parsed.favorites)) setFavorites(parsed.favorites);
+          if (parsed.selectedSection) setSelectedSection(parsed.selectedSection);
+          if (typeof parsed.searchQuery === 'string') setSearchQuery(parsed.searchQuery);
+          if (parsed.filterType) setFilterType(parsed.filterType);
+          if (Array.isArray(parsed.sections)) setSections(parsed.sections);
+          if (Array.isArray(parsed.minorSections)) setMinorSections(parsed.minorSections);
+          if (parsed.collapsedGroups) setCollapsedGroups(parsed.collapsedGroups);
+          
+          setIsDataLoaded(true);
+        } else {
+          throw new Error("Mismatched persistent database version");
+        }
       } catch (e) {
+        console.error("Corrupted database found:", e);
+        // Fallback robustly
+        setLinks(DEFAULT_SACHI_LINKS);
+        setFavorites(['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline']);
+        setSections(DEFAULT_SECTIONS);
+        setMinorSections(DEFAULT_MINOR_SECTIONS);
+        setCollapsedGroups({
+          'Báo cáo và kế hoạch': false,
+          'Booking KOC': false,
+          'Inhouse TikTok': false,
+          'Đào tạo': false,
+        });
+        setIsDataLoaded(true);
+
+        triggerNotification("Dữ liệu lưu trước đó bị lỗi. App đã khôi phục về dữ liệu mặc định.", "info");
+      }
+    } else {
+      // First-time user setup: legacy check or standard fallback
+      const legacyLinks = localStorage.getItem('sachi_custom_links');
+      const legacyFavs = localStorage.getItem('sachi_favorites');
+      const legacySecs = localStorage.getItem('sachi_sections');
+      const legacyMinor = localStorage.getItem('sachi_minor_sections');
+
+      try {
+        if (legacyLinks) setLinks(JSON.parse(legacyLinks));
+        else setLinks(DEFAULT_SACHI_LINKS);
+
+        if (legacyFavs) setFavorites(JSON.parse(legacyFavs));
+        else setFavorites(['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline']);
+
+        if (legacySecs) setSections(JSON.parse(legacySecs));
+        else setSections(DEFAULT_SECTIONS);
+
+        if (legacyMinor) setMinorSections(JSON.parse(legacyMinor));
+        else setMinorSections(DEFAULT_MINOR_SECTIONS);
+      } catch (err) {
+        setLinks(DEFAULT_SACHI_LINKS);
+        setFavorites(['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline']);
+        setSections(DEFAULT_SECTIONS);
         setMinorSections(DEFAULT_MINOR_SECTIONS);
       }
-    } else {
-      setMinorSections(DEFAULT_MINOR_SECTIONS);
-      localStorage.setItem('sachi_minor_sections', JSON.stringify(DEFAULT_MINOR_SECTIONS));
-    }
 
-    // Load links
-    const savedLinks = localStorage.getItem('sachi_custom_links');
-    if (savedLinks) {
+      setCollapsedGroups({
+        'Báo cáo và kế hoạch': false,
+        'Booking KOC': false,
+        'Inhouse TikTok': false,
+        'Đào tạo': false,
+      });
+      setIsDataLoaded(true);
+    }
+  }, [currentUser, isLoggedIn]);
+
+  // 2. Debounced Auto-Save Synchronizer Effect
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser || !isDataLoaded) return;
+
+    setSaveStatus('saving');
+
+    const delayDebounce = setTimeout(() => {
       try {
-        setLinks(JSON.parse(savedLinks));
-      } catch (e) {
-        setLinks(DEFAULT_SACHI_LINKS);
+        const payload = {
+          dashboardDataVersion: 1,
+          links,
+          favorites,
+          selectedSection,
+          searchQuery,
+          filterType,
+          sections,
+          minorSections,
+          collapsedGroups
+        };
+        
+        localStorage.setItem(`sachi_data_${currentUser}`, JSON.stringify(payload));
+        setSaveStatus('saved');
+      } catch (err) {
+        console.error("Critical auto-save execution failed:", err);
+        setSaveStatus('error');
       }
-    } else {
-      setLinks(DEFAULT_SACHI_LINKS);
-      localStorage.setItem('sachi_custom_links', JSON.stringify(DEFAULT_SACHI_LINKS));
-    }
+    }, 800); // 0.8 second debounce delay
 
-    // Load favorites
-    const savedFavs = localStorage.getItem('sachi_favorites');
-    if (savedFavs) {
-      try {
-        setFavorites(JSON.parse(savedFavs));
-      } catch (e) {
-        setFavorites([]);
-      }
-    } else {
-      const initialFavs = ['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline'];
-      setFavorites(initialFavs);
-      localStorage.setItem('sachi_favorites', JSON.stringify(initialFavs));
-    }
+    return () => clearTimeout(delayDebounce);
+  }, [
+    isLoggedIn,
+    currentUser,
+    isDataLoaded,
+    links,
+    favorites,
+    selectedSection,
+    searchQuery,
+    filterType,
+    sections,
+    minorSections,
+    collapsedGroups
+  ]);
 
-    // Interval for dynamic clock
+  // 3. Simple timezone clock interval
+  useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -242,26 +320,36 @@ export default function App() {
       triggerNotification('Đã thêm vào Danh sách Yêu thích', 'success');
     }
     setFavorites(updated);
-    localStorage.setItem('sachi_favorites', JSON.stringify(updated));
   };
 
-  // Restore defaults function
+  // Restore defaults function with accurate modal confirmation prompt
   const handleRestoreDefaults = () => {
-    if (window.confirm('Bạn có chắc chắn muốn khôi phục dữ liệu liên kết và danh mục nguyên bản của Sachi? Các thiết lập thêm sẽ được làm sạch.')) {
+    if (window.confirm('Bạn có chắc chắn muốn khôi phục dữ liệu mặc định? Toàn bộ chỉnh sửa hiện tại sẽ bị xóa.')) {
+      // Temporarily bypass auto-saver block to prevent overwrite during reset updates
+      setIsDataLoaded(false);
+
       setLinks(DEFAULT_SACHI_LINKS);
-      localStorage.setItem('sachi_custom_links', JSON.stringify(DEFAULT_SACHI_LINKS));
-      
       setSections(DEFAULT_SECTIONS);
-      localStorage.setItem('sachi_sections', JSON.stringify(DEFAULT_SECTIONS));
-
       setMinorSections(DEFAULT_MINOR_SECTIONS);
-      localStorage.setItem('sachi_minor_sections', JSON.stringify(DEFAULT_MINOR_SECTIONS));
+      setFavorites(['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline']);
+      setCollapsedGroups({
+        'Báo cáo và kế hoạch': false,
+        'Booking KOC': false,
+        'Inhouse TikTok': false,
+        'Đào tạo': false,
+      });
+      setSelectedSection('all');
+      setSearchQuery('');
+      setFilterType('all');
 
-      const defaultFavs = ['rp-digital', 'rp-booking-content-plan', 'tr-brand-guideline'];
-      setFavorites(defaultFavs);
-      localStorage.setItem('sachi_favorites', JSON.stringify(defaultFavs));
+      // Clear from storage
+      localStorage.removeItem(`sachi_data_${currentUser}`);
       
-      triggerNotification('Đã khôi phục hoàn chỉnh cấu trúc liên kết Sachi!', 'success');
+      // Reinstate loaded state to trigger saved status on newly aligned defaults
+      setTimeout(() => {
+        setIsDataLoaded(true);
+        triggerNotification('Đã khôi phục hoàn chỉnh cấu trúc liên kết mặc định Sachi!', 'success');
+      }, 100);
     }
   };
 
@@ -684,7 +772,7 @@ export default function App() {
             onClick={handleRestoreDefaults}
             className="w-full text-center py-2 text-[10px] font-medium text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-all cursor-pointer"
           >
-            Khôi phục dữ liệu gốc
+            Khôi phục dữ liệu mặc định
           </button>
         </div>
       </aside>
@@ -819,7 +907,7 @@ export default function App() {
                 <span className="font-bold text-slate-700">{currentUser}</span>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={handleRestoreDefaults} className="text-sky-600 font-bold">Khôi phục gốc</button>
+                <button onClick={handleRestoreDefaults} className="text-sky-600 font-bold">Khôi phục dữ liệu mặc định</button>
                 <button onClick={handleLogout} className="text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded-lg">Đăng xuất</button>
               </div>
             </div>
@@ -1002,6 +1090,8 @@ export default function App() {
               ))}
             </div>
           </div>
+
+
 
           {/* Flat search results view (triggered if search query is active) */}
           {searchQuery.trim() !== '' ? (
@@ -1532,6 +1622,68 @@ export default function App() {
             Không gian làm việc trực tuyến và cổng kết nối dữ liệu dành cho Assistant Brand Manager nhãn hàng mẹ và bé Sachi.
           </p>
         </footer>
+
+        {/* Floating Premium Save Status Indicator */}
+        {isLoggedIn && (
+          <div 
+            id="save-status-pill" 
+            className={`fixed bottom-5 left-5 z-45 flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-semibold shadow-lg backdrop-blur-md transition-all duration-300 ${
+              saveStatus === 'saving' 
+                ? 'bg-amber-50/95 text-amber-700 border-amber-200 shadow-amber-200/5 animate-pulse'
+                : saveStatus === 'saved'
+                ? 'bg-emerald-50/95 text-emerald-700 border-emerald-200 shadow-emerald-200/5'
+                : saveStatus === 'error'
+                ? 'bg-rose-50/95 text-rose-700 border-rose-250 shadow-rose-200/15 animate-bounce'
+                : 'bg-white/95 text-slate-500 border-slate-200'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              saveStatus === 'saving' 
+                ? 'bg-amber-500'
+                : saveStatus === 'saved'
+                ? 'bg-emerald-500'
+                : saveStatus === 'error'
+                ? 'bg-rose-500'
+                : 'bg-slate-400'
+            }`} />
+            
+            <span>
+              {saveStatus === 'saving' && 'Đang lưu tự động...'}
+              {saveStatus === 'saved' && 'Đã đồng bộ lưu'}
+              {saveStatus === 'error' && 'Lỗi lưu dữ liệu!'}
+              {saveStatus === 'idle' && 'Đã tải dữ liệu'}
+            </span>
+
+            {/* Backup Save Trigger button */}
+            <button
+              onClick={() => {
+                try {
+                  const dataToSave = {
+                    dashboardDataVersion: 1,
+                    links,
+                    favorites,
+                    selectedSection,
+                    searchQuery,
+                    filterType,
+                    sections,
+                    minorSections,
+                    collapsedGroups
+                  };
+                  localStorage.setItem(`sachi_data_${currentUser}`, JSON.stringify(dataToSave));
+                  setSaveStatus('saved');
+                  triggerNotification("Đã lưu cưỡng bức toàn bộ cấu hình!", "success");
+                } catch (e) {
+                  setSaveStatus('error');
+                  triggerNotification("Không thể lưu cấu hình, vui lòng giải phóng dung lượng!", "info");
+                }
+              }}
+              className="ml-1 px-1.5 py-0.5 bg-white/80 hover:bg-slate-100 active:scale-95 text-slate-600 rounded-md border border-slate-200/60 cursor-pointer flex items-center justify-center transition-all text-[10px] font-bold"
+              title="Lưu ngay lập tức để sao lưu dự phòng"
+            >
+              Lưu ngay
+            </button>
+          </div>
+        )}
 
       </div>
     </div>
